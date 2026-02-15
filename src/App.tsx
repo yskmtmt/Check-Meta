@@ -130,23 +130,29 @@ function App() {
       console.log('--- MediaInfo JSON Result ---');
       console.log(JSON.stringify(result, null, 2));
 
-      const general = result.media?.track.find((t: any) => t['@type'] === 'General');
-      const video = result.media?.track.find((t: any) => t['@type'] === 'Video');
-      const audio = result.media?.track.find((t: any) => t['@type'] === 'Audio');
+      const tracks = result.media?.track || [];
+      const general = tracks.find((t: any) => t['@type'] === 'General');
+      const video = tracks.find((t: any) => t['@type'] === 'Video');
+      const audio = tracks.find((t: any) => t['@type'] === 'Audio');
 
       if (video || general) {
-        const width = video ? parseInt(video.Width) : 0;
-        const height = video ? parseInt(video.Height) : 0;
+        // Build時の型エラー対策のため any キャストや index アクセスを併用
+        const videoAny = video as any;
+        const generalAny = general as any;
+        const audioAny = audio as any;
+
+        const width = videoAny ? parseInt(videoAny.Width) : 0;
+        const height = videoAny ? parseInt(videoAny.Height) : 0;
 
         // 再生時間の取得を徹底強化
         // Duration_String3 は "HH:MM:SS.mmm" 形式なので、あれば最優先
-        const ds3 = general?.Duration_String3 || video?.Duration_String3 || audio?.Duration_String3;
+        const ds3 = generalAny?.Duration_String3 || videoAny?.Duration_String3 || audioAny?.Duration_String3;
 
-        const durations = result.media?.track
-          .map((t: any) => parseFloat(t.Duration))
+        const durations = tracks
+          .map((t: any) => parseFloat(String(t.Duration)))
           .filter((d: number) => !isNaN(d) && d > 0);
 
-        const rawDuration = general?.Duration || video?.Duration || audio?.Duration || (durations.length > 0 ? Math.max(...durations) : 0);
+        const maxDuration = durations.length > 0 ? Math.max(...durations) : 0;
 
         setMetadata({
           name: file.name,
@@ -154,17 +160,16 @@ function App() {
           size: formatBytes(file.size),
           resolution: width && height ? `${width} x ${height}` : '不明',
           resolutionLabel: width && height ? getResolutionLabel(width, height) : '不明',
-          bitRate: video?.BitRate ? `${(parseInt(video.BitRate) / 1000000).toFixed(2)} Mbps` : (general?.OverallBitRate ? `${(parseInt(general.OverallBitRate) / 1000000).toFixed(2)} Mbps` : '不明'),
-          bitRateMode: video?.BitRate_Mode || general?.OverallBitRate_Mode || '不明',
-          frameRate: video ? `${video.FrameRate ?? video.FrameRate_Nominal ?? '不明'} fps` : '不明',
-          duration: formatDuration(rawDuration, ds3),
-          container: general?.Format || '不明',
-          videoCodec: getDetailedCodec(video),
-          audioCodec: getDetailedCodec(audio),
+          bitRate: videoAny?.BitRate ? `${(parseInt(videoAny.BitRate) / 1000000).toFixed(2)} Mbps` : (generalAny?.OverallBitRate ? `${(parseInt(generalAny.OverallBitRate) / 1000000).toFixed(2)} Mbps` : '不明'),
+          bitRateMode: videoAny?.BitRate_Mode || generalAny?.OverallBitRate_Mode || '不明',
+          frameRate: videoAny ? `${videoAny.FrameRate ?? videoAny.FrameRate_Nominal ?? '不明'} fps` : '不明',
+          duration: formatDuration(maxDuration, ds3),
+          container: generalAny?.Format || '不明',
+          videoCodec: getDetailedCodec(videoAny),
+          audioCodec: getDetailedCodec(audioAny),
         });
       } else {
-        console.error('No valid track found:', result);
-        setError('動画情報の解析に失敗しました。対応していないファイル形式の可能性があります。');
+        setError('動画情報を取得できませんでした。');
       }
     } catch (err) {
       console.error('Detailed Error:', err);
